@@ -1,0 +1,49 @@
+version: '3'
+
+services:
+  auth-redis:
+    image: redis:7.0.5-alpine
+    hostname: redis
+    ports:
+      - "6379:6379"
+
+  auth-postgres:
+    image: postgres:16.1
+    ports:
+      - "5432:5432"
+    env_file:
+      - ../../.env
+
+  auth-service:
+    build: ../../
+    image: auth-service-image
+    command: bash -c "cd src && gunicorn -k core.config.MoviesUvicornWorker main:app -w 1 -b 0.0.0.0:8002"
+    env_file:
+      - ../../.env
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../../../auth-service:/usr/src/auth-service
+    depends_on:
+      - auth-redis
+      - auth-postgres
+
+  tests:
+    build: .
+    restart: "always"
+    command: >
+          sh -c "python3 utils/wait.py
+          && tail -f /dev/null"
+    tty: true
+    volumes:
+      - ../tests:/usr/src/tests
+    env_file:
+      - ../../.env
+    environment:
+      - SERVICE_URL=http://auth-service:8002
+      - TESTING_UUID=ca7ad720-bd44-44e0-9cf6-1b6596fb5edc
+    depends_on:
+      - auth-service
+
+volumes:
+  postgres_db:

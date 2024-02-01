@@ -1,0 +1,15 @@
+# pydantic
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# asynchronous api
+fastapi==0.104.1
+orjson==3.9.10
+uvicorn==0.12.2
+gunicorn==21.2.0
+uvloop==0.17.0 ; sys_platform != "win32" and implementation_name == "cpython"
+
+#databases
+elasticsearch[async]==7.9.1
+redis==5.0.1
+backoff==2.2.1

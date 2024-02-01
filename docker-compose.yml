@@ -1,0 +1,177 @@
+version: '3'
+volumes:
+  postgres_db:
+  auth_postgres_db:
+  django_static:
+  fast_api_static:
+
+networks:
+  movies_network:
+
+services:
+  db:
+    container_name: database
+    image: postgres:16.1
+    restart: "always"
+    expose:
+      - "5432"
+    env_file:
+      - .env.docker
+    volumes:
+      - ./movies_database.sql:/docker-entrypoint-initdb.d/10-initdb.sql
+      - postgres_db:/var/lib/postgresql/data
+    networks:
+      - movies_network
+
+  django:
+    container_name: movies
+    build: django/
+    restart: "always"
+    command: bash -c "chmod +x wait_for_postgres/wait-for-postgres.sh && python3 manage.py makemigrations && python3 manage.py migrate movies --fake && python3 manage.py migrate && python3 sqlite_to_postgres/load_data.py && python3 manage.py collectstatic --noinput && uwsgi --ini uwsgi/uwsgi.ini"
+    expose:
+      - "8000"
+    env_file:
+      - .env.docker
+    environment:
+      - DJANGO_SUPERUSER_USERNAME=admin
+      - DJANGO_SUPERUSER_PASSWORD=admin
+      - DJANGO_SUPERUSER_EMAIL=admin@example.com
+    depends_on:
+      - db
+    volumes:
+      - django_static:/usr/src/movies/static/
+    networks:
+      - movies_network
+
+  elasticsearch:
+    container_name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.2
+    restart: "always"
+    environment:
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    networks:
+      - movies_network
+
+  etl_pipeline:
+    container_name: etl_pipeline
+    build: postgres_to_es/
+    restart: "always"
+    command: python3 main.py
+    env_file:
+      - postgres_to_es/.env
+    depends_on:
+      - elasticsearch
+      - django
+      - db
+    networks:
+      - movies_network
+
+  swagger:
+    image: swaggerapi/swagger-ui
+    restart: "always"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./openapi/openapi.yaml:/swagger.yaml
+    environment:
+      - SWAGGER_JSON=/swagger.yaml
+    networks:
+      - movies_network
+
+  nginx:
+    image: nginx:latest
+    restart: "always"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx_configs/:/etc/nginx/conf.d:ro
+      - django_static:/data/static/
+      - fast_api_static:/data/static/
+    depends_on:
+      - django
+      - fast_api
+    ports:
+      - "8080:80"
+      - "8082:81"
+    networks:
+      - movies_network
+
+  fast_api:
+    build: fast_api/
+    restart: 'always'
+    command: bash -c "cd src && gunicorn -k core.config.MoviesUvicornWorker main:app -w 4 -b 0.0.0.0:8001"
+    env_file:
+      - .env.docker
+    depends_on:
+      - elasticsearch
+    expose:
+      - "8001"
+    volumes:
+      - fast_api_static:/fastapi/static
+    networks:
+      - movies_network
+
+  redis:
+    image: redis:7.0.5-alpine
+    hostname: redis
+    expose:
+      - "6379"
+    networks:
+      - movies_network
+
+  auth-postgres:
+    container_name: auth-database
+    image: postgres:16.1
+    restart: "always"
+    expose:
+      - "5432"
+    env_file:
+      - auth-service/.env
+    volumes:
+      - auth_postgres_db:/var/lib/postgresql/data
+    networks:
+      - movies_network
+
+  auth-redis:
+    image: redis:7.0.5-alpine
+    hostname: redis
+    expose:
+      - "6379"
+    networks:
+      - movies_network
+
+  auth-service:
+    build: auth-service/
+    restart: always
+    command: bash -c "python3 db_health_check.py
+                      && cd src && alembic upgrade head
+                      && gunicorn -k core.config.MoviesUvicornWorker main:app -w 4 -b 0.0.0.0:8002"
+    env_file:
+      - auth-service/.env
+    depends_on:
+      - auth-redis
+      - auth-postgres
+    ports:
+      - "8002:8002"
+    networks:
+      - movies_network
+
+
+  test_database:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: 'app'
+      POSTGRES_PASSWORD: '12345'
+      POSTGRES_DB: 'test'
+
+    ports:
+      - '5433:5432'
+
+  test-redis:
+    image: redis:7.0.5-alpine
+    hostname: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - movies_network

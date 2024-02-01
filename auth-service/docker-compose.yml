@@ -1,0 +1,40 @@
+version: '3'
+volumes:
+  postgres_db:
+  auth_postgres_db:
+  django_static:
+  fast_api_static:
+
+services:
+  auth-postgres:
+    container_name: auth-database
+    image: postgres:16.1
+    restart: "always"
+    expose:
+      - "5432"
+    env_file:
+      - .env
+    volumes:
+      - auth_postgres_db:/var/lib/postgresql/data
+
+  auth-redis:
+    image: redis:7.0.5-alpine
+    hostname: redis
+    expose:
+      - "6379"
+
+  auth-service:
+    build: .
+    restart: always
+    command: bash -c "python3 db_health_check.py
+                      && cd src 
+                      && gunicorn -k core.config.MoviesUvicornWorker main:app -w 4 -b 0.0.0.0:8002"
+    env_file:
+      - .env
+    volumes:
+      - fast_api_static:/static/
+    depends_on:
+      - auth-redis
+      - auth-postgres
+    ports:
+      - "8002:8002"

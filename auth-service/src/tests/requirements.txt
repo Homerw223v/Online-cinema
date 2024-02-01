@@ -1,0 +1,30 @@
+# Tests
+pytest==7.4.3
+pytest-asyncio==0.21.1
+faker==19.11.0
+
+# Data models
+pydantic-settings==2.1.0
+pydantic~=2.5.2
+
+# Api
+fastapi~=0.104.1
+uvicorn~=0.12.2
+orjson~=3.9.10
+backoff~=2.2.1
+
+# HTTP requests
+aiohttp==3.8.6
+
+# Environment
+python-dotenv~=1.0.0
+
+# Databases
+psycopg==3.1.17
+asyncpg==0.29.0
+psycopg-binary==3.1.17
+redis==5.0.1
+SQLAlchemy~=2.0.25
+
+# Passwords
+python-jose==3.3.0
